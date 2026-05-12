@@ -1,5 +1,10 @@
 # go-iio
 
+[![Go Reference](https://pkg.go.dev/badge/github.com/westphae/go-iio.svg)](https://pkg.go.dev/github.com/westphae/go-iio)
+[![CI](https://github.com/westphae/go-iio/actions/workflows/ci.yml/badge.svg)](https://github.com/westphae/go-iio/actions/workflows/ci.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/westphae/go-iio)](https://goreportcard.com/report/github.com/westphae/go-iio)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 A small, idiomatic Go library for reading Linux Industrial I/O (IIO) sensors
 — the ones that show up under `/sys/bus/iio/devices/` after a device tree
 overlay loads. Polled and buffered captures, dynamic channel discovery, no
