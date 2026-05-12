@@ -17,7 +17,7 @@ func Example() {
 	}
 	defer dev.Close()
 
-	temp, _ := dev.ReadFloat("temp")     // °C
+	temp, _ := dev.ReadFloat("temp")      // °C
 	press, _ := dev.ReadFloat("pressure") // kPa
 	fmt.Printf("%.2f °C, %.3f kPa\n", temp, press)
 }
