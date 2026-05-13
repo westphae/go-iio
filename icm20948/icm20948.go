@@ -12,6 +12,7 @@ package icm20948
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/westphae/go-iio"
@@ -249,6 +250,9 @@ func (i *ICM20948) Stream(ctx context.Context, opts StreamOptions) (<-chan Sampl
 		for {
 			n, err := buf.Read(ctx, recs)
 			if err != nil {
+				if ctx.Err() == nil {
+					log.Printf("icm20948: stream stopped: %s", err)
+				}
 				return
 			}
 			for k := 0; k < n; k++ {
