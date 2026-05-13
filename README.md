@@ -53,9 +53,16 @@ for s := range ch {
 }
 ```
 
+The `icm20948` subpackage wraps the InvenSense ICM-20948 9-axis IMU with the
+same shape (`Open / Read / Stream`, full-scale knobs via `WithAccelScale` /
+`WithGyroScale`). It expects the kernel `icm20948` driver — either the
+out-of-tree `github.com/westphae/icm20948-mod` or the mainline
+`inv_icm20948` once it lands in your kernel.
+
 See `examples/` for runnable programs, and `CLAUDE.md` for the design notes.
 
 ## Status
 
-v0: pure-Go sysfs backend, BMP280 polled and buffered captures. ICM-20948 and
-a libiio (cgo) backend are planned but not yet implemented.
+v0: pure-Go sysfs backend, BMP280 polled and buffered captures, ICM-20948
+convenience wrapper. A `backend/libiio` (cgo) slot is reserved for remote
+sensors over `iiod` but is not yet implemented.

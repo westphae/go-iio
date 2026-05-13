@@ -81,8 +81,11 @@ kernel exposes, converted to SI:
 
 - BMP280: °C and kPa. The kernel reports `in_temp_input` in m°C — `ReadFloat`
   and the buffered decoder divide by 1000 so callers always see °C.
-- Future IMUs: rad/s, m/s², T (when `_input` is present the kernel already
-  scales; otherwise the decoder applies `_scale` and `_offset`).
+- ICM-20948: m/s² (accel), rad/s (anglvel), µT (magn — wrapper converts the
+  kernel's Gauss to µT), °C (temp). When the kernel driver only exposes a
+  type-level scale/offset (e.g. one `in_accel_scale` shared across x/y/z),
+  `newDevice` inherits the type-level values onto each axis so buffered
+  decode applies the right factor.
 
 Coordinate-frame / mount-matrix concerns belong in the *consumer* (e.g.
 goflying's AHRS), not here. We pass mount-matrix attributes through as
@@ -93,10 +96,12 @@ strings if present.
 - v0 ships sysfs backend only. A `backend/libiio` slot exists in the layout
   but is not implemented; add it when remote sensors or USB SDRs that need
   `iiod` actually show up.
-- ICM-20948 is the next sensor wrapper. The mainline IIO driver
-  (`inv_icm20948`) was merged ~Aug 2025 but is not yet enabled in the
-  Raspberry Pi OS kernel as of 6.18.29-v8+. When it ships, the wrapper
-  goes under `icm20948/` and reuses the same `Device`/`Buffer` API.
+- ICM-20948 wrapper lives under `icm20948/` and reuses the same
+  `Device`/`Buffer` API. It targets the out-of-tree
+  `github.com/westphae/icm20948-mod` kernel driver (the mainline
+  `inv_icm20948` driver was merged upstream ~Aug 2025 but is not yet enabled
+  in the Raspberry Pi OS kernel as of 6.18.29-v8+; both expose the standard
+  IIO channel naming, so the wrapper works against either).
 - The BMP280 driver does not expose `in_*_sampling_frequency` — rate is
   controlled by the trigger's `sampling_frequency` plus per-channel
   oversampling (`in_<ch>_oversampling_ratio`).
