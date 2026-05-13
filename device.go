@@ -37,6 +37,11 @@ type Channel struct {
 
 func newDevice(h backend.DeviceHandle) (*Device, error) {
 	d := &Device{h: h, byCh: map[string]*Channel{}}
+	// If a previous run left the buffer enabled (segfault, SIGKILL, etc.) the
+	// kernel will refuse subsequent writes to scale / oversampling / sampling
+	// frequency attrs with EBUSY. Force-disable it before we configure.
+	// Ignored if the device doesn't expose buffer/enable.
+	_ = h.WriteAttr(backend.AttrLocator{Name: "buffer/enable"}, "0")
 	attrs, err := h.ListAttrs()
 	if err != nil {
 		h.Close()
@@ -90,8 +95,32 @@ func newDevice(h backend.DeviceHandle) (*Device, error) {
 			}
 		}
 	}
-	// Bind any indices we recorded into a scan element that was populated
-	// after the index attr — readAttr ordering isn't guaranteed.
+	// Some drivers (notably the ICM-20948) mark IIO_CHAN_INFO_SCALE /
+	// IIO_CHAN_INFO_OFFSET as info_mask_shared_by_type, so the sysfs file is
+	// in_<type>_scale (e.g. in_accel_scale) — one file shared across all axes
+	// of that channel type. Inherit the type-level scale/offset onto each
+	// per-axis channel that doesn't carry its own, so buffered decode applies
+	// the right factor.
+	for _, ch := range d.chs {
+		if ch.hasSc && ch.hasOff {
+			continue
+		}
+		parent, ok := d.parentChannel(ch.name)
+		if !ok {
+			continue
+		}
+		if !ch.hasSc && parent.hasSc {
+			ch.scale = parent.scale
+			ch.hasSc = true
+		}
+		if !ch.hasOff && parent.hasOff {
+			ch.offset = parent.offset
+			ch.hasOff = true
+		}
+	}
+	// Bind scale/offset into each channel's scan element so buffered decode
+	// picks them up. readAttr ordering isn't guaranteed, and the inheritance
+	// above may have just populated them.
 	for _, ch := range d.chs {
 		if ch.hasScan && ch.hasSc {
 			ch.scan.Scale = ch.scale
@@ -101,6 +130,18 @@ func newDevice(h backend.DeviceHandle) (*Device, error) {
 		}
 	}
 	return d, nil
+}
+
+// parentChannel returns the type-level parent of a modified channel name —
+// e.g. "accel_x" → "accel", "anglvel_y" → "anglvel". Returns ok=false if
+// `name` has no trailing _<modifier> or the parent channel is absent.
+func (d *Device) parentChannel(name string) (*Channel, bool) {
+	i := strings.LastIndexByte(name, '_')
+	if i <= 0 {
+		return nil, false
+	}
+	parent, ok := d.byCh[name[:i]]
+	return parent, ok
 }
 
 // Name returns the kernel-reported device name (e.g. "bmp280").
