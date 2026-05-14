@@ -3,6 +3,7 @@ package iio
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 )
 
@@ -24,8 +25,9 @@ const hrtimerConfigRoot = "/sys/kernel/config/iio/triggers/hrtimer"
 // sampling frequency (Hz). Returns the trigger so the caller can bind it and
 // Remove it on shutdown.
 //
-// Requires CAP_SYS_ADMIN (typically root) because configfs mkdir is
-// privileged, and the iio-trig-hrtimer kernel module must be loaded.
+// Requires write access to /sys/kernel/config/iio/triggers/hrtimer (root, or
+// a udev/tmpfiles configuration that grants the caller's group access) and
+// the iio-trig-hrtimer kernel module must be loaded.
 func EnsureHRTimer(name string, freqHz int) (*HRTrigger, error) {
 	if name == "" {
 		return nil, fmt.Errorf("iio: EnsureHRTimer: name is required")
@@ -34,8 +36,21 @@ func EnsureHRTimer(name string, freqHz int) (*HRTrigger, error) {
 	if _, err := os.Stat(hrtimerConfigRoot); err != nil {
 		return nil, fmt.Errorf("iio: hrtimer config root %s not present (modprobe iio-trig-hrtimer?): %w", hrtimerConfigRoot, err)
 	}
-	if err := os.Mkdir(cfgPath, 0); err != nil && !os.IsExist(err) {
-		return nil, fmt.Errorf("iio: create hrtimer %q: %w", name, err)
+	created := false
+	if err := os.Mkdir(cfgPath, 0); err != nil {
+		if !os.IsExist(err) {
+			return nil, fmt.Errorf("iio: create hrtimer %q: %w", name, err)
+		}
+	} else {
+		created = true
+	}
+	if created {
+		// configfs mkdir creates the trigger's sysfs node synchronously,
+		// but any udev rule that chmods its attributes to a non-root group
+		// (so the caller can be unprivileged) runs async. Settle before
+		// the first attribute write so we don't race it. Best-effort:
+		// silently ignored if udevadm isn't installed.
+		_ = exec.Command("udevadm", "settle", "--timeout=2").Run()
 	}
 	trig := &HRTrigger{name: name, cfgPath: cfgPath}
 	if freqHz > 0 {
