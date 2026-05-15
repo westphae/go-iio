@@ -144,6 +144,52 @@ func (d *Device) parentChannel(name string) (*Channel, bool) {
 	return parent, ok
 }
 
+// ReloadScale re-reads in_<channel>_scale and in_<channel>_offset for every
+// known channel and rebinds the new values into the scan-element metadata
+// used by buffered decode. Call this after writing scale/offset/oversampling/
+// sampling-frequency attributes that the kernel cross-couples (e.g. ICM-20948
+// scale writes change the chip's full-scale register and rescale every
+// subsequent raw sample). Without this, buffered samples would be decoded
+// with stale scale and report incorrect SI values.
+func (d *Device) ReloadScale() error {
+	for _, ch := range d.chs {
+		if v, ok := readFloat(d.h, backend.AttrLocator{Channel: ch.name, Name: "scale"}); ok {
+			ch.scale = v
+			ch.hasSc = true
+		}
+		if v, ok := readFloat(d.h, backend.AttrLocator{Channel: ch.name, Name: "offset"}); ok {
+			ch.offset = v
+			ch.hasOff = true
+		}
+	}
+	// Re-run the per-axis inheritance from the type-level parent (e.g.
+	// "accel_x" inherits from "accel"), since the parent's scale/offset may
+	// have moved without the child's per-axis sysfs file changing.
+	for _, ch := range d.chs {
+		parent, ok := d.parentChannel(ch.name)
+		if !ok {
+			continue
+		}
+		if parent.hasSc {
+			ch.scale = parent.scale
+			ch.hasSc = true
+		}
+		if parent.hasOff {
+			ch.offset = parent.offset
+			ch.hasOff = true
+		}
+	}
+	for _, ch := range d.chs {
+		if ch.hasScan && ch.hasSc {
+			ch.scan.Scale = ch.scale
+		}
+		if ch.hasScan && ch.hasOff {
+			ch.scan.Offset = ch.offset
+		}
+	}
+	return nil
+}
+
 // Name returns the kernel-reported device name (e.g. "bmp280").
 func (d *Device) Name() string { return d.h.Name() }
 
