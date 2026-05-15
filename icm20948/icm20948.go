@@ -13,6 +13,8 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math"
+	"strconv"
 	"strings"
 	"time"
 
@@ -54,8 +56,10 @@ type Sample struct {
 
 type config struct {
 	path         string
-	accelScaleG  int // 2/4/8/16
-	gyroScaleDps int // 250/500/1000/2000
+	accelScaleG  int     // 2/4/8/16
+	gyroScaleDps int     // 250/500/1000/2000
+	accelDLPFHz  float64 // 0 = leave kernel default
+	gyroDLPFHz   float64 // 0 = leave kernel default
 }
 
 // Option configures Open.
@@ -72,6 +76,17 @@ func WithAccelScale(g int) Option { return func(c *config) { c.accelScaleG = g }
 // WithGyroScale writes in_anglvel_scale to select a gyroscope full-scale
 // range. Valid values: 250, 500, 1000, 2000 (dps).
 func WithGyroScale(dps int) Option { return func(c *config) { c.gyroScaleDps = dps } }
+
+// WithAccelDLPFHz writes in_accel_filter_low_pass_3db_frequency to set the
+// accelerometer's on-chip digital low-pass cutoff. The driver only accepts
+// values from in_accel_filter_low_pass_3db_frequency_available; this Option
+// snaps hz to the nearest available cutoff.
+func WithAccelDLPFHz(hz float64) Option { return func(c *config) { c.accelDLPFHz = hz } }
+
+// WithGyroDLPFHz writes in_anglvel_filter_low_pass_3db_frequency to set the
+// gyroscope's on-chip digital low-pass cutoff. Snaps to the nearest available
+// value like WithAccelDLPFHz.
+func WithGyroDLPFHz(hz float64) Option { return func(c *config) { c.gyroDLPFHz = hz } }
 
 // ICM20948 is an opened sensor.
 type ICM20948 struct {
@@ -141,6 +156,19 @@ func Open(opts ...Option) (*ICM20948, error) {
 		}
 	}
 
+	if cfg.accelDLPFHz > 0 {
+		if err := setNearestDLPF(dev, "accel", cfg.accelDLPFHz); err != nil {
+			dev.Close()
+			return nil, err
+		}
+	}
+	if cfg.gyroDLPFHz > 0 {
+		if err := setNearestDLPF(dev, "anglvel", cfg.gyroDLPFHz); err != nil {
+			dev.Close()
+			return nil, err
+		}
+	}
+
 	// iio.Open caches the kernel-default scale into each channel's buffered
 	// decode metadata; the writes above changed the chip register and the
 	// kernel's reported in_*_scale, but the cached values are now stale.
@@ -151,6 +179,41 @@ func Open(opts ...Option) (*ICM20948, error) {
 	}
 
 	return &ICM20948{dev: dev, cfg: cfg}, nil
+}
+
+// setNearestDLPF reads in_<channel>_filter_low_pass_3db_frequency_available,
+// picks the value nearest hz, and writes it back to the _3db_frequency attr.
+// The kernel only accepts values present in the _available list, so an exact
+// string match matters.
+func setNearestDLPF(dev *iio.Device, channel string, hz float64) error {
+	avail, err := dev.ChannelAttr(channel, "filter_low_pass_3db_frequency_available")
+	if err != nil {
+		return fmt.Errorf("icm20948: read %s dlpf available: %w", channel, err)
+	}
+	fields := strings.Fields(avail)
+	if len(fields) == 0 {
+		return fmt.Errorf("icm20948: empty %s dlpf available list", channel)
+	}
+	var bestStr string
+	bestDiff := math.MaxFloat64
+	for _, f := range fields {
+		v, err := strconv.ParseFloat(f, 64)
+		if err != nil {
+			continue
+		}
+		d := math.Abs(v - hz)
+		if d < bestDiff {
+			bestDiff = d
+			bestStr = f
+		}
+	}
+	if bestStr == "" {
+		return fmt.Errorf("icm20948: no parseable %s dlpf value in %q", channel, avail)
+	}
+	if err := dev.SetChannelAttr(channel, "filter_low_pass_3db_frequency", bestStr); err != nil {
+		return fmt.Errorf("icm20948: set %s dlpf %s: %w", channel, bestStr, err)
+	}
+	return nil
 }
 
 // Device returns the underlying *iio.Device for callers that need raw attr
