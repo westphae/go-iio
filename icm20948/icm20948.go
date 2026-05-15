@@ -141,6 +141,15 @@ func Open(opts ...Option) (*ICM20948, error) {
 		}
 	}
 
+	// iio.Open caches the kernel-default scale into each channel's buffered
+	// decode metadata; the writes above changed the chip register and the
+	// kernel's reported in_*_scale, but the cached values are now stale.
+	// Re-bind so buffered Stream samples decode with the right factor.
+	if err := dev.ReloadScale(); err != nil {
+		dev.Close()
+		return nil, fmt.Errorf("icm20948: reload scale: %w", err)
+	}
+
 	return &ICM20948{dev: dev, cfg: cfg}, nil
 }
 
