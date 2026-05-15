@@ -13,6 +13,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/westphae/go-iio"
@@ -149,6 +150,32 @@ func (i *ICM20948) Device() *iio.Device { return i.dev }
 
 // Close releases the device.
 func (i *ICM20948) Close() error { return i.dev.Close() }
+
+// Overrange returns the kernel's sticky AK09916 magnetometer overflow flag
+// (in_magn_overrange). The icm20948-mod kernel driver latches ST2.HOFL on
+// every buffered sample where any mag axis saturated the chip's ±4912 µT
+// range; the flag stays set until cleared via ClearOverrange. The IIO scan
+// elements still carry the (clipped) µT values regardless — Overrange is
+// the only handle into whether the chip itself flagged saturation.
+func (i *ICM20948) Overrange() (bool, error) {
+	s, err := i.dev.Attr("in_magn_overrange")
+	if err != nil {
+		return false, fmt.Errorf("icm20948: read in_magn_overrange: %w", err)
+	}
+	return strings.TrimSpace(s) == "1", nil
+}
+
+// ClearOverrange clears the sticky overflow flag by writing 0 to
+// in_magn_overrange. Subsequent reads return false until the next HOFL
+// event re-latches it. Idempotent — clearing an already-clear flag is a
+// no-op as far as the chip is concerned, but the sysfs write still costs
+// a syscall; prefer test-and-clear over unconditional clearing.
+func (i *ICM20948) ClearOverrange() error {
+	if err := i.dev.SetAttr("in_magn_overrange", "0"); err != nil {
+		return fmt.Errorf("icm20948: clear in_magn_overrange: %w", err)
+	}
+	return nil
+}
 
 // Read returns a single polled sample. Each call performs ten sysfs reads
 // (accel/gyro/mag axes plus temp). Intended for low-rate use; for streaming
