@@ -86,6 +86,11 @@ kernel exposes, converted to SI:
   type-level scale/offset (e.g. one `in_accel_scale` shared across x/y/z),
   `newDevice` inherits the type-level values onto each axis so buffered
   decode applies the right factor.
+- MMC5983MA: µT (magn — wrapper converts the kernel's Gauss to µT), °C
+  (temp). Temperature is *not* in the buffered scan (chip can only do mag
+  OR temp at a time; running temp would have to pause the continuous mag
+  stream). `Stream` samples have `TempC == 0`; use `Read()` when you need
+  temperature.
 
 Coordinate-frame / mount-matrix concerns belong in the *consumer* (e.g.
 goflying's AHRS), not here. We pass mount-matrix attributes through as
@@ -102,6 +107,14 @@ strings if present.
   `inv_icm20948` driver was merged upstream ~Aug 2025 but is not yet enabled
   in the Raspberry Pi OS kernel as of 6.18.29-v8+; both expose the standard
   IIO channel naming, so the wrapper works against either).
+- MMC5983MA wrapper lives under `mmc5983ma/` and targets the out-of-tree
+  `github.com/westphae/mmc5983ma-mod` kernel driver. Same `Device`/`Buffer`
+  API. Adds AMR-specific helpers — `SetPulse`/`ResetPulse` (manual
+  degauss), `AutoNullCalibBias` (the chip's SET-measure / RESET-measure /
+  store-offset recipe), `CalibBias`/`SetCalibBias` (read/write the kernel
+  driver's software offset shadow), and `RunSelftest`/`SelftestDelta`
+  (in_magn_test). Buffered scan is mag x/y/z + timestamp only; temperature
+  is polled-only because the chip can't do mag and temp simultaneously.
 - The BMP280 driver does not expose `in_*_sampling_frequency` — rate is
   controlled by the trigger's `sampling_frequency` plus per-channel
   oversampling (`in_<ch>_oversampling_ratio`).
