@@ -107,6 +107,15 @@ strings if present.
   `inv_icm20948` driver was merged upstream ~Aug 2025 but is not yet enabled
   in the Raspberry Pi OS kernel as of 6.18.29-v8+; both expose the standard
   IIO channel naming, so the wrapper works against either).
+- ICM-45686 wrapper lives under `icm45686/` and follows the same shape
+  (Open/Read/Stream, scale-in-SI options). It targets the out-of-tree
+  `github.com/westphae/icm45686-mod` kernel driver, which vendors mainline
+  `drivers/iio/imu/inv_icm45600` verbatim (the rpi-6.18 kernel doesn't ship
+  it yet). No magnetometer — ICM-45686 is 6-axis (accel + gyro + temp). The
+  inv_icm45600 driver doesn't expose `_filter_low_pass_3db_frequency` per
+  channel like the icm20948 driver does, so the wrapper has no DLPF option;
+  callers that need ODR control reach through
+  `Device().SetAttr("sampling_frequency", …)`.
 - MMC5983MA wrapper lives under `mmc5983ma/` and targets the out-of-tree
   `github.com/westphae/mmc5983ma-mod` kernel driver. Same `Device`/`Buffer`
   API. Adds AMR-specific helpers — `SetPulse`/`ResetPulse` (manual
