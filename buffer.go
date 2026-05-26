@@ -225,10 +225,12 @@ func (b *Buffer) decode(frame []byte) Record {
 			continue
 		}
 		v := float64(raw)
+		if sc.Offset != 0 {
+			v += sc.Offset
+		}
 		if sc.Scale != 0 {
 			v *= sc.Scale
 		}
-		v += sc.Offset
 		if sc.Name == "temp" {
 			// IIO convention: in_temp_input is m°C — apply the same divisor
 			// when decoding raw*scale so callers get °C either way.

@@ -262,12 +262,13 @@ func (d *Device) ReadFloat(channel string) (float64, error) {
 	if perr != nil {
 		return 0, fmt.Errorf("iio: parse %s_raw %q: %w", channel, s, perr)
 	}
+	// IIO ABI: value = (raw + offset) × scale (offset before scale).
 	out := raw
-	if ch.hasSc {
-		out *= ch.scale
-	}
 	if ch.hasOff {
 		out += ch.offset
+	}
+	if ch.hasSc {
+		out *= ch.scale
 	}
 	return out, nil
 }
