@@ -2,8 +2,10 @@ package iio
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"os"
 	"sync"
 	"time"
 )
@@ -251,10 +253,27 @@ func (b *Buffer) decode(frame []byte) Record {
 	return rec
 }
 
-// readWithCtx adapts a blocking Read so it respects ctx cancellation. We run
-// the read in a goroutine and let ctx interrupt the wait — the underlying
-// fd is left open (Close on the buffer will eventually unblock it).
+// readWithCtx performs a Read that respects ctx cancellation. For *os.File
+// streams (the sysfs backend's /dev/iio:deviceN handle) it uses
+// SetReadDeadline so a cancelled context does not leave a stray blocked Read
+// on the fd — important when callers time out and immediately retry.
 func readWithCtx(ctx context.Context, r io.Reader, buf []byte) (int, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+	if f, ok := r.(*os.File); ok {
+		if deadline, ok := ctx.Deadline(); ok {
+			if err := f.SetReadDeadline(deadline); err == nil {
+				n, err := f.Read(buf)
+				_ = f.SetReadDeadline(time.Time{})
+				if err != nil && ctx.Err() != nil &&
+					(errors.Is(err, os.ErrDeadlineExceeded) || errors.Is(err, context.DeadlineExceeded)) {
+					return 0, ctx.Err()
+				}
+				return n, err
+			}
+		}
+	}
 	type res struct {
 		n   int
 		err error
