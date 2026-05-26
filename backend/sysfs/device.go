@@ -165,7 +165,13 @@ func (d *device) ReadAttr(a backend.AttrLocator) (string, error) {
 
 func (d *device) WriteAttr(a backend.AttrLocator, value string) error {
 	p := d.attrPath(a)
-	if err := os.WriteFile(p, []byte(value), 0); err != nil {
+	var err error
+	if a.Channel == "" && a.Name == "buffer/enable" {
+		err = writeFileTimeout(p, []byte(value), sysfsWriteTimeout)
+	} else {
+		err = os.WriteFile(p, []byte(value), 0)
+	}
+	if err != nil {
 		return fmt.Errorf("sysfs: write %s=%q: %w", p, value, err)
 	}
 	return nil
